@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import LoadingSpinner from './LoadingSpinner';
-
 interface WhatsAppSession {
   uuid: string;
   sessionName: string;
@@ -16,8 +14,6 @@ const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [session, setSession] = useState<WhatsAppSession | null>(null);
   const [loading, setLoading] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otpLoading, setOtpLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [passwordData, setPasswordData] = useState({
