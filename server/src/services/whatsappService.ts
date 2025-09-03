@@ -11,6 +11,7 @@ interface WhatsAppService {
 }
 
 class WhatsAppManager {
+  private static instance: WhatsAppManager;
   private sessions: Map<string, WhatsAppService> = new Map();
   private sessionsDir = path.join(__dirname, '../../sessions');
 
@@ -18,6 +19,13 @@ class WhatsAppManager {
     if (!fs.existsSync(this.sessionsDir)) {
       fs.mkdirSync(this.sessionsDir, { recursive: true });
     }
+  }
+
+  static getInstance(): WhatsAppManager {
+    if (!WhatsAppManager.instance) {
+      WhatsAppManager.instance = new WhatsAppManager();
+    }
+    return WhatsAppManager.instance;
   }
 
   async initializeSession(uuid: string): Promise<{ qrCode?: string; status: string }> {
@@ -226,10 +234,16 @@ class WhatsAppManager {
       const service = this.sessions.get(uuid);
       if (service?.client) {
         try {
-          // Gracefully destroy client
+          // First disconnect gracefully
+          await service.client.pupPage?.browser()?.close().catch(() => {});
+          
+          // Then destroy client with timeout and error handling
           await Promise.race([
-            service.client.destroy(),
-            new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
+            service.client.destroy().catch(error => {
+              console.warn(`Client destroy error for ${uuid}:`, error.message);
+              // Don't throw, just log the error
+            }),
+            new Promise(resolve => setTimeout(resolve, 3000)) // 3 second timeout
           ]);
         } catch (destroyError) {
           console.warn(`Error destroying client for ${uuid}:`, destroyError);
@@ -237,7 +251,18 @@ class WhatsAppManager {
         }
       }
       
+      // Remove from memory immediately
       this.sessions.delete(uuid);
+      
+      // Schedule file cleanup after a delay to allow handles to close
+      setTimeout(async () => {
+        try {
+          await this.cleanupSessionFiles(uuid);
+        } catch (cleanupError) {
+          console.warn(`Delayed cleanup failed for ${uuid}:`, cleanupError);
+        }
+      }, 5000); // 5 second delay
+      
       console.log(`Session ${uuid} destroyed successfully`);
     } catch (error) {
       console.error(`Error destroying session ${uuid}:`, error);
@@ -269,36 +294,57 @@ class WhatsAppManager {
     for (let i = 0; i < retries; i++) {
       try {
         if (fs.existsSync(sessionDir)) {
-          // Force close any file handles first
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Force close any file handles with longer delay
+          await new Promise(resolve => setTimeout(resolve, 2000 + (i * 1000)));
           
-          // Use recursive force removal
+          // Try to kill any chrome processes first (Windows specific)
+          if (process.platform === 'win32') {
+            try {
+              const { exec } = require('child_process');
+              await new Promise((resolve) => {
+                exec('taskkill /f /im chrome.exe /t', () => resolve(undefined));
+              });
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (processError) {
+              // Ignore process kill errors
+            }
+          }
+          
+          // Use recursive force removal with more aggressive settings
           fs.rmSync(sessionDir, { 
             recursive: true, 
             force: true,
-            maxRetries: 3,
-            retryDelay: 500 
+            maxRetries: 5,
+            retryDelay: 1000 
           });
           
           console.log(`Session files cleaned up: ${sessionDir}`);
           return;
         }
       } catch (error: any) {
+        const isEBUSY = error.code === 'EBUSY' || error.message.includes('resource busy');
         console.warn(`Cleanup attempt ${i + 1} failed for ${uuid}:`, error.message);
         
         if (i === retries - 1) {
           // Last attempt failed, log but don't crash
           console.error(`Failed to cleanup session files after ${retries} attempts: ${uuid}`);
           
-          // Schedule cleanup for later
-          setTimeout(() => {
-            this.cleanupSessionFiles(uuid, 1).catch(err => 
-              console.error(`Scheduled cleanup failed for ${uuid}:`, err.message)
-            );
-          }, 30000); // Try again in 30 seconds
+          if (isEBUSY) {
+            // For EBUSY errors, schedule multiple delayed cleanups
+            const delays = [30000, 120000, 300000]; // 30s, 2m, 5m
+            
+            delays.forEach((delay, index) => {
+              setTimeout(() => {
+                this.cleanupSessionFiles(uuid, 1).catch(err => 
+                  console.warn(`Scheduled cleanup ${index + 1} failed for ${uuid}:`, err.message)
+                );
+              }, delay);
+            });
+          }
         } else {
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+          // Wait progressively longer before retry
+          const waitTime = isEBUSY ? 5000 * (i + 1) : 2000 * (i + 1);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
     }
@@ -347,9 +393,43 @@ class WhatsAppManager {
     }
   }
 
+  async cleanup(): Promise<void> {
+    console.log('Starting WhatsApp Manager cleanup...');
+    
+    try {
+      const sessionUUIDs = Array.from(this.sessions.keys());
+      
+      // Cleanup all active sessions
+      const cleanupPromises = sessionUUIDs.map(async (uuid) => {
+        try {
+          await this.destroySession(uuid);
+        } catch (error) {
+          console.error(`Error cleaning up session ${uuid}:`, error);
+        }
+      });
+      
+      // Wait for all cleanups to complete (with timeout)
+      await Promise.allSettled(cleanupPromises.map(p => 
+        Promise.race([
+          p,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Cleanup timeout')), 30000)
+          )
+        ])
+      ));
+      
+      // Clear sessions map
+      this.sessions.clear();
+      
+      console.log('WhatsApp Manager cleanup completed');
+    } catch (error) {
+      console.error('Error during WhatsApp Manager cleanup:', error);
+    }
+  }
+
   getQRCode(uuid: string): string | undefined {
     return this.sessions.get(uuid)?.qrCode;
   }
 }
 
-export default new WhatsAppManager();
+export default WhatsAppManager;

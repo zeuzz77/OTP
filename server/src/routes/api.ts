@@ -3,7 +3,9 @@ import WhatsappSession from '../models/WhatsappSession';
 import WhatsAppManager from '../services/whatsappService';
 import OtpService from '../services/otpService';
 import Otp from '../models/Otp';
+
 const router = express.Router();
+const whatsappManager = WhatsAppManager.getInstance();
 
 // Open API: Send OTP (Public endpoint with UUID authentication)
 router.post('/send-otp', async (req, res) => {
@@ -31,7 +33,7 @@ router.post('/send-otp', async (req, res) => {
       return res.status(404).json({ error: 'Session not found with provided UUID' });
     }
 
-    const sessionStatus = await WhatsAppManager.getSessionStatus(uuid);
+    const sessionStatus = await whatsappManager.getSessionStatus(uuid);
     if (sessionStatus !== 'ready') {
       return res.status(400).json({ 
         error: `WhatsApp session not ready. Current status: ${sessionStatus}` 
@@ -47,7 +49,7 @@ router.post('/send-otp', async (req, res) => {
       : `🔐 Kode OTP Anda: ${otpCode}\n\nKode ini berlaku selama 5 menit.\nJangan bagikan kode ini kepada siapapun.`;
 
     // Send message via WhatsApp
-    const sent = await WhatsAppManager.sendMessage(uuid, phoneNumber, otpMessage);
+    const sent = await whatsappManager.sendMessage(uuid, phoneNumber, otpMessage);
 
     if (sent) {
       // Save OTP to database if it was auto-generated
@@ -111,7 +113,7 @@ router.post('/status', async (req, res) => {
     let isConnected = false;
     
     try {
-      currentStatus = await WhatsAppManager.getSessionStatus(uuid);
+      currentStatus = await whatsappManager.getSessionStatus(uuid);
       isConnected = currentStatus === 'ready';
       
       // Update database status if different

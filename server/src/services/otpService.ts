@@ -1,6 +1,8 @@
 import Otp from '../models/Otp';
 import WhatsAppManager from './whatsappService';
 
+const whatsappManager = WhatsAppManager.getInstance();
+
 class OtpService {
   
   static generateOTP(): string {
@@ -18,7 +20,7 @@ class OtpService {
   ): Promise<{ success: boolean; message: string; otpCode?: string }> {
     try {
       // Check if WhatsApp session is ready
-      const sessionStatus = await WhatsAppManager.getSessionStatus(uuid);
+      const sessionStatus = await whatsappManager.getSessionStatus(uuid);
       if (sessionStatus !== 'ready') {
         return {
           success: false,
@@ -45,7 +47,7 @@ class OtpService {
       // Send OTP via WhatsApp
       const message = `🔐 Kode OTP Anda: ${otpCode}\n\nKode ini berlaku selama 5 menit.\nJangan bagikan kode ini kepada siapapun.`;
       
-      const sent = await WhatsAppManager.sendMessage(uuid, phoneNumber, message);
+      const sent = await whatsappManager.sendMessage(uuid, phoneNumber, message);
       
       if (sent) {
         return {

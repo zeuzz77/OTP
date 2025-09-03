@@ -6,6 +6,7 @@ import OtpService from '../services/otpService';
 import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
+const whatsappManager = WhatsAppManager.getInstance();
 
 // Get user's WhatsApp session
 router.get('/', authenticateToken, async (req: any, res) => {
@@ -20,7 +21,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
 
     let currentStatus = 'unknown';
     try {
-      currentStatus = await WhatsAppManager.getSessionStatus(session.uuid);
+      currentStatus = await whatsappManager.getSessionStatus(session.uuid);
     } catch (statusError) {
       console.error(`Error getting session status for ${session.uuid}:`, statusError);
       currentStatus = 'disconnected';
@@ -29,7 +30,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
     // If session is disconnected or failed, clean it up
     if (currentStatus === 'disconnected' || session.status === 'auth_failure') {
       try {
-        await WhatsAppManager.cleanupDisconnectedSession(session.uuid);
+        await whatsappManager.cleanupDisconnectedSession(session.uuid);
       } catch (cleanupError) {
         console.error(`Error cleaning up session ${session.uuid}:`, cleanupError);
       }
@@ -54,7 +55,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
     let qrCode = null;
     try {
       qrCode = (currentStatus === 'qr' || currentStatus === 'initializing') 
-        ? WhatsAppManager.getQRCode(session.uuid) 
+        ? whatsappManager.getQRCode(session.uuid) 
         : null;
     } catch (qrError) {
       console.error(`Error getting QR code:`, qrError);
@@ -86,7 +87,7 @@ router.post('/generate', authenticateToken, async (req: any, res) => {
 
     if (session) {
       uuid = session.uuid;      
-      await WhatsAppManager.destroySession(uuid);
+      await whatsappManager.destroySession(uuid);
       await session.update({ 
         status: 'initializing',
         qrCode: null as any,
@@ -104,7 +105,7 @@ router.post('/generate', authenticateToken, async (req: any, res) => {
       } as any);
     }
 
-    const result = await WhatsAppManager.initializeSession(uuid);
+    const result = await whatsappManager.initializeSession(uuid);
 
     res.json({
       uuid,

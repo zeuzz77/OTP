@@ -9,12 +9,52 @@ import WhatsAppManager from "./services/whatsappService";
 
 dotenv.config();
 
+// Global error handlers to prevent server crash
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit immediately, allow graceful cleanup
+});
+
+// Handle SIGTERM and SIGINT for graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  
+  try {
+    const whatsappManager = WhatsAppManager.getInstance();
+    await whatsappManager.cleanup();
+    console.log('WhatsApp service cleanup completed');
+  } catch (error) {
+    console.error('Error during shutdown cleanup:', error);
+  }
+  
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  
+  try {
+    const whatsappManager = WhatsAppManager.getInstance();
+    await whatsappManager.cleanup();
+    console.log('WhatsApp service cleanup completed');
+  } catch (error) {
+    console.error('Error during shutdown cleanup:', error);
+  }
+  
+  process.exit(0);
+});
+
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 const NODE_ENV = process.env.NODE_ENV || "development";
 
 app.use(express.json());
-if (NODE_ENV === "development") app.use(cors({ origin: ["http://localhost:5173", "http://localhost:5174"] })); // Vite dev
+if (NODE_ENV === "development") app.use(cors({ origin: "*" })); // Vite dev
 
 // API Routes
 app.use("/api/auth", authRouter);
@@ -44,7 +84,7 @@ app.get(/^(?!\/api).*/, (_req, res) => {
       setInterval(async () => {
         try {
           console.log('🔍 Running WhatsApp session health check...');
-          await WhatsAppManager.checkSessionHealth();
+          await WhatsAppManager.getInstance().checkSessionHealth();
         } catch (healthCheckError) {
           console.error('Health check failed:', healthCheckError);
           // Don't crash server, just log the error
