@@ -1,0 +1,19 @@
+{
+  "name": "whatsapp-otp-system",
+  "version": "1.0.0",
+  "description": "WhatsApp OTP System with React and Express",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "cd server && npm run dev",
+    "client:dev": "cd client && npm run dev",
+    "build": "npm run client:build && npm run server:build",
+    "client:build": "cd client && npm run build",
+    "server:build": "cd server && npm run build",
+    "start": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,19 @@
+/* App.css - Custom Tailwind Components */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom components if needed */
+@layer components {
+  .btn-whatsapp {
+    @apply bg-whatsapp-primary hover:bg-whatsapp-secondary text-white font-medium py-2 px-4 rounded transition duration-200;
+  }
+  
+  .input-base {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-whatsapp-primary focus:border-transparent;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow p-6;
+  }
+}
