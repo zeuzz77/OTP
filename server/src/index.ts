@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import sessionRouter from "./routes/session";
 import authRouter from "./routes/auth";
 import apiRouter from "./routes/api";
+import WhatsAppManager from "./services/whatsappService";
 
 dotenv.config();
 
@@ -36,7 +37,31 @@ app.get(/^(?!\/api).*/, (_req, res) => {
 
 (async () => {
   try {    
-    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      
+      // Start health check for WhatsApp sessions every 5 minutes
+      setInterval(async () => {
+        try {
+          console.log('🔍 Running WhatsApp session health check...');
+          await WhatsAppManager.checkSessionHealth();
+        } catch (healthCheckError) {
+          console.error('Health check failed:', healthCheckError);
+          // Don't crash server, just log the error
+        }
+      }, 5 * 60 * 1000); // 5 minutes
+      
+      // Handle uncaught exceptions gracefully
+      process.on('uncaughtException', (error) => {
+        console.error('Uncaught Exception:', error);
+        // Don't exit process, just log the error
+      });
+      
+      process.on('unhandledRejection', (reason, promise) => {
+        console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+        // Don't exit process, just log the error
+      });
+    });
   } catch (err) {
     console.error("Server startup error:", err);
     process.exit(1);

@@ -18,14 +18,47 @@ router.get('/', authenticateToken, async (req: any, res) => {
       return res.json({ session: null });
     }
 
-    const currentStatus = await WhatsAppManager.getSessionStatus(session.uuid);
+    let currentStatus = 'unknown';
+    try {
+      currentStatus = await WhatsAppManager.getSessionStatus(session.uuid);
+    } catch (statusError) {
+      console.error(`Error getting session status for ${session.uuid}:`, statusError);
+      currentStatus = 'disconnected';
+    }
+    
+    // If session is disconnected or failed, clean it up
+    if (currentStatus === 'disconnected' || session.status === 'auth_failure') {
+      try {
+        await WhatsAppManager.cleanupDisconnectedSession(session.uuid);
+      } catch (cleanupError) {
+        console.error(`Error cleaning up session ${session.uuid}:`, cleanupError);
+      }
+      
+      return res.json({ 
+        session: null, 
+        disconnected: true,
+        reason: session.status === 'auth_failure' ? 'Authentication failed' : 'WhatsApp disconnected'
+      });
+    }
     
     // Update status if different
     if (currentStatus !== session.status) {
-      await session.update({ status: currentStatus as any });
+      try {
+        await session.update({ status: currentStatus as any });
+      } catch (updateError) {
+        console.error(`Error updating session status:`, updateError);
+      }
     }
 
-    const qrCode = currentStatus === 'qr' ? WhatsAppManager.getQRCode(session.uuid) : null;
+    // Keep QR code available during qr and initializing states
+    let qrCode = null;
+    try {
+      qrCode = (currentStatus === 'qr' || currentStatus === 'initializing') 
+        ? WhatsAppManager.getQRCode(session.uuid) 
+        : null;
+    } catch (qrError) {
+      console.error(`Error getting QR code:`, qrError);
+    }
 
     res.json({
       session: {
@@ -113,5 +146,7 @@ router.post('/send-otp', authenticateToken, async (req: any, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+
 
 export default router;

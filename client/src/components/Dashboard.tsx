@@ -34,18 +34,35 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
     
-    if (session && session.qrCode && session.status !== 'ready') {
+    // Monitor session even when ready (to detect disconnects)
+    if (session) {
       intervalId = setInterval(async () => {
         try {
           const response = await axios.get('/api/session');
+          
+          // Handle disconnect notification
+          if (response.data.disconnected) {
+            setSession(null);
+            setMessage(`🔴 ${response.data.reason}. Session has been cleaned up. Please generate a new QR code to reconnect.`);
+            return;
+          }
+          
           const updatedSession = response.data.session;
           
           if (updatedSession) {
             const previousStatus = session.status;
             
+            // Preserve QR code if status is still initializing
+            const updatedSessionWithQR = {
+              ...updatedSession,
+              qrCode: updatedSession.status === 'initializing' && session.qrCode 
+                ? session.qrCode 
+                : updatedSession.qrCode
+            };
+            
             setSession(prevSession => ({
               ...prevSession,
-              ...updatedSession
+              ...updatedSessionWithQR
             }));
             
             // Berikan notifikasi berdasarkan perubahan status
@@ -63,13 +80,22 @@ const Dashboard: React.FC = () => {
                 case 'auth_failure':
                   setMessage('⚠️ Authentication failed. Please regenerate QR code.');
                   break;
+                case 'initializing':
+                  if (previousStatus === 'qr') {
+                    setMessage('🔄 Initializing WhatsApp session. Please keep the QR code visible.');
+                  }
+                  break;
               }
             }
+          } else {
+            // Session was deleted (cleanup happened)
+            setSession(null);
+            setMessage('🔴 WhatsApp session expired or disconnected. Please generate a new QR code.');
           }
         } catch (error) {
           console.error('Failed to fetch session status:', error);
         }
-      }, 3000); // Polling setiap 3 detik
+      }, session.status === 'ready' ? 10000 : 3000); // Poll less frequently when ready
     }
 
     return () => {
@@ -77,11 +103,19 @@ const Dashboard: React.FC = () => {
         clearInterval(intervalId);
       }
     };
-  }, [session?.qrCode, session?.status]);
+  }, [session?.uuid, session?.status]);
 
   const fetchSession = async () => {
     try {
       const response = await axios.get('/api/session');
+      
+      // Handle disconnect notification
+      if (response.data.disconnected) {
+        setSession(null);
+        setMessage(`🔴 ${response.data.reason}. Please generate a new QR code to reconnect.`);
+        return;
+      }
+      
       setSession(response.data.session);
     } catch (error) {
       console.error('Failed to fetch session:', error);
@@ -107,39 +141,6 @@ const Dashboard: React.FC = () => {
     }
     
     setLoading(false);
-  };
-
-  const sendOTP = async () => {
-    if (!phoneNumber.trim()) {
-      setMessage('Please enter a phone number');
-      return;
-    }
-
-    if (!session || session.status !== 'ready') {
-      setMessage('WhatsApp session is not ready. Please scan QR code first.');
-      return;
-    }
-
-    setOtpLoading(true);
-    setMessage('');
-
-    try {
-      const response = await axios.post('/api/session/send-otp', {
-        phoneNumber: phoneNumber.trim()
-      });
-
-      if (response.data.success) {
-        setMessage(`OTP sent successfully to ${phoneNumber}`);
-        setPhoneNumber('');
-      } else {
-        setMessage(response.data.message || 'Failed to send OTP');
-      }
-    } catch (error: any) {
-      setMessage(error.response?.data?.error || 'Failed to send OTP');
-      console.error('OTP sending failed:', error);
-    }
-
-    setOtpLoading(false);
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -254,7 +255,7 @@ const Dashboard: React.FC = () => {
             <p className="text-gray-600 mb-4">No active session found.</p>
           )}
 
-          {session?.status !== 'ready' && (
+          {(!session || !['ready', 'initializing', 'qr'].includes(session.status)) && (
             <button 
                 onClick={generateQRCode} 
                 disabled={loading}
@@ -278,29 +279,15 @@ const Dashboard: React.FC = () => {
               </p>
             </div>
           )}
-          {session?.status && (
+          {session?.status == 'ready' && (
             <div className="mt-6 space-y-4">
               {/* Open API Information */}
               <div className="bg-green-50 p-4 rounded-md border border-green-200">
                 <h3 className="font-medium text-green-900 mb-2">Open API (Public Access):</h3>
                 <div className="text-sm space-y-2 text-green-800">
-                  <div>
-                    <p><strong>UUID Key:</strong> <span className="font-mono">{session.uuid}</span></p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(session.uuid);
-                        setMessage('UUID copied to clipboard!');
-                      }}
-                      className="ml-2 px-2 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded transition"
-                      title="Copy UUID"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                  
+                    <p>Use the following endpoint to send OTP messages via WhatsApp:</p>                 
                   <div className="border-t border-green-200 pt-2">
-                    <p><strong>Send OTP:</strong> <span className="font-mono">POST /api/send-otp</span></p>
+                    <p><strong>Send OTP :</strong> <span className="font-mono">POST /api/send-otp</span></p>
                     <div className="mt-1 p-2 bg-green-100 rounded text-xs font-mono">
                       {JSON.stringify({
                         phoneNumber: "6281234567890",

@@ -84,4 +84,62 @@ router.post('/send-otp', async (req, res) => {
   }
 });
 
+// Check session status by UUID (Public endpoint)
+router.post('/status', async (req, res) => {
+  try {
+    const { uuid } = req.body;
+
+    if (!uuid) {
+      return res.status(400).json({ error: 'UUID is required' });
+    }
+
+    // Check if session exists in database
+    const session = await WhatsappSession.findOne({
+      where: { uuid }
+    });
+
+    if (!session) {
+      return res.json({ 
+        exists: false,
+        status: 'not_found',
+        message: 'Session not found'
+      });
+    }
+
+    // Get current status from WhatsApp Manager
+    let currentStatus = 'unknown';
+    let isConnected = false;
+    
+    try {
+      currentStatus = await WhatsAppManager.getSessionStatus(uuid);
+      isConnected = currentStatus === 'ready';
+      
+      // Update database status if different
+      if (currentStatus !== session.status) {
+        await session.update({ status: currentStatus as any });
+      }
+    } catch (statusError) {
+      console.error(`Error getting status for ${uuid}:`, statusError);
+      currentStatus = 'error';
+    }
+
+    res.json({
+      exists: true,
+      uuid: session.uuid,
+      status: currentStatus,
+      isConnected,
+      lastActivity: session.lastActivity,
+      userId: session.user_id
+    });
+  } catch (error) {
+    console.error('Check session status error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      exists: false,
+      status: 'error'
+    });
+  }
+});
+
+
 export default router;
